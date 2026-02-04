@@ -107,6 +107,7 @@ function ChatPageContent() {
     // Text-to-Speech state
     const [speakingId, setSpeakingId] = useState<string | null>(null)
     const [ttsSupported, setTtsSupported] = useState(false)
+    const [vietnameseVoice, setVietnameseVoice] = useState<SpeechSynthesisVoice | null>(null)
 
     // Welcome back state
     const [showWelcomeBack, setShowWelcomeBack] = useState(false)
@@ -126,8 +127,35 @@ function ChatPageContent() {
         // Check speech recognition support
         if (typeof window !== 'undefined') {
             setSpeechSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-            // Check TTS support
-            setTtsSupported('speechSynthesis' in window)
+            // Check TTS support and preload voices
+            if ('speechSynthesis' in window) {
+                setTtsSupported(true)
+
+                // Function to find and set Vietnamese voice
+                const findVietnameseVoice = () => {
+                    const voices = window.speechSynthesis.getVoices()
+                    console.log('Available TTS voices:', voices.map(v => `${v.name} (${v.lang})`).join(', '))
+
+                    // Priority: exact vi-VN match, then vi prefix, then name contains Vietnamese
+                    let viVoice = voices.find(v => v.lang === 'vi-VN')
+                    if (!viVoice) viVoice = voices.find(v => v.lang.startsWith('vi'))
+                    if (!viVoice) viVoice = voices.find(v => v.name.toLowerCase().includes('vietnam'))
+
+                    if (viVoice) {
+                        console.log('Selected Vietnamese voice:', viVoice.name, viVoice.lang)
+                        setVietnameseVoice(viVoice)
+                    } else {
+                        console.log('No Vietnamese voice found. Using default.')
+                    }
+                }
+
+                // Voices may not be loaded immediately
+                if (window.speechSynthesis.getVoices().length > 0) {
+                    findVietnameseVoice()
+                } else {
+                    window.speechSynthesis.onvoiceschanged = findVietnameseVoice
+                }
+            }
         }
 
         // Load theme
@@ -512,42 +540,26 @@ function ChatPageContent() {
 
         const utterance = new SpeechSynthesisUtterance(content)
 
-        // Get available voices and find Vietnamese voice
-        const voices = window.speechSynthesis.getVoices()
-        const vietnameseVoice = voices.find(voice =>
-            voice.lang.startsWith('vi') ||
-            voice.name.toLowerCase().includes('vietnam') ||
-            voice.name.toLowerCase().includes('vietnamese')
-        )
-
+        // Use preloaded Vietnamese voice if available
         if (vietnameseVoice) {
             utterance.voice = vietnameseVoice
+            console.log('Using Vietnamese voice:', vietnameseVoice.name)
+        } else {
+            console.log('No Vietnamese voice available, using default with vi-VN lang')
         }
 
         utterance.lang = 'vi-VN'
-        utterance.rate = 1.0
+        utterance.rate = 0.9  // Slightly slower for clearer Vietnamese pronunciation
         utterance.pitch = 1.0
 
         utterance.onstart = () => setSpeakingId(messageId)
         utterance.onend = () => setSpeakingId(null)
-        utterance.onerror = () => setSpeakingId(null)
-
-        // If voices not loaded yet, wait for them
-        if (voices.length === 0) {
-            window.speechSynthesis.onvoiceschanged = () => {
-                const loadedVoices = window.speechSynthesis.getVoices()
-                const viVoice = loadedVoices.find(v =>
-                    v.lang.startsWith('vi') ||
-                    v.name.toLowerCase().includes('vietnam')
-                )
-                if (viVoice) {
-                    utterance.voice = viVoice
-                }
-                window.speechSynthesis.speak(utterance)
-            }
-        } else {
-            window.speechSynthesis.speak(utterance)
+        utterance.onerror = (e) => {
+            console.error('TTS Error:', e)
+            setSpeakingId(null)
         }
+
+        window.speechSynthesis.speak(utterance)
     }
 
     const stopSpeaking = () => {
