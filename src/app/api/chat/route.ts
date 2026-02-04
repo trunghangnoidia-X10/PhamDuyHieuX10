@@ -742,7 +742,7 @@ export async function POST(request: Request) {
       const apiKey = process.env.OPENAI_API_KEY
 
       if (!apiKey) {
-         // Return a demo response if no API key
+         // Return a demo response if no API key (non-streaming)
          return NextResponse.json({
             message: `Cảm ơn bạn đã chia sẻ! 🙌
 
@@ -764,7 +764,7 @@ Chúc bạn thành công! 💪`
       }
 
       const openai = new OpenAI({ apiKey })
-      const { messages } = await request.json()
+      const { messages, stream: enableStream } = await request.json()
 
       // Get random story and philosophy context
       const randomContext = getRandomContext()
@@ -772,13 +772,58 @@ Chúc bạn thành công! 💪`
       // Combine system prompt with random context
       const enhancedSystemPrompt = SYSTEM_PROMPT + randomContext
 
+      // Check if streaming is requested
+      if (enableStream) {
+         // Streaming response
+         const stream = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+               { role: 'system', content: enhancedSystemPrompt },
+               ...messages
+            ],
+            temperature: 0.85,
+            max_tokens: 1000,
+            stream: true,
+         })
+
+         // Create a readable stream for SSE
+         const encoder = new TextEncoder()
+         const readableStream = new ReadableStream({
+            async start(controller) {
+               try {
+                  for await (const chunk of stream) {
+                     const content = chunk.choices[0]?.delta?.content || ''
+                     if (content) {
+                        // Send each chunk as SSE data
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                     }
+                  }
+                  // Send done signal
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+                  controller.close()
+               } catch (error) {
+                  controller.error(error)
+               }
+            }
+         })
+
+         return new Response(readableStream, {
+            headers: {
+               'Content-Type': 'text/event-stream',
+               'Cache-Control': 'no-cache',
+               'Connection': 'keep-alive',
+            },
+         })
+      }
+
+      // Non-streaming response (fallback)
       const completion = await openai.chat.completions.create({
          model: 'gpt-4o-mini',
          messages: [
             { role: 'system', content: enhancedSystemPrompt },
             ...messages
          ],
-         temperature: 0.85,  // Increased for more diverse responses
+         temperature: 0.85,
          max_tokens: 1000,
       })
 

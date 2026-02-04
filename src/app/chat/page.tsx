@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import AuthGuard from '@/components/AuthGuard'
 import { useAuth } from '@/lib/auth'
+import MarkdownRenderer from '@/components/MarkdownRenderer'
 
 interface Message {
     id: string
@@ -103,9 +104,16 @@ function ChatPageContent() {
     const [speechSupported, setSpeechSupported] = useState(false)
     const recognitionRef = useRef<SpeechRecognition | null>(null)
 
+    // Text-to-Speech state
+    const [speakingId, setSpeakingId] = useState<string | null>(null)
+    const [ttsSupported, setTtsSupported] = useState(false)
+
     // Welcome back state
     const [showWelcomeBack, setShowWelcomeBack] = useState(false)
     const [daysAway, setDaysAway] = useState(0)
+
+    // Streaming state
+    const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -118,6 +126,8 @@ function ChatPageContent() {
         // Check speech recognition support
         if (typeof window !== 'undefined') {
             setSpeechSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
+            // Check TTS support
+            setTtsSupported('speechSynthesis' in window)
         }
 
         // Load theme
@@ -297,38 +307,92 @@ function ChatPageContent() {
         setInput('')
         setIsLoading(true)
 
+        const assistantMessageId = (Date.now() + 1).toString()
+        const assistantMessage: Message = {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: '',
+            timestamp: new Date()
+        }
+
+        // Add empty assistant message first
+        updateCurrentConvMessages([...newMessages, assistantMessage])
+        setStreamingMessageId(assistantMessageId)
+
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    messages: newMessages.map(m => ({ role: m.role, content: m.content }))
+                    messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+                    stream: true
                 }),
             })
 
             if (!response.ok) throw new Error('Failed to get response')
 
-            const data = await response.json()
-            const assistantMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: data.message,
-                timestamp: new Date()
+            const reader = response.body?.getReader()
+            const decoder = new TextDecoder()
+            let fullContent = ''
+
+            if (reader) {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+
+                    const chunk = decoder.decode(value)
+                    const lines = chunk.split('\n')
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6)
+                            if (data === '[DONE]') continue
+                            try {
+                                const parsed = JSON.parse(data)
+                                if (parsed.content) {
+                                    fullContent += parsed.content
+                                    // Update message content progressively
+                                    setConversations(prev => prev.map(c =>
+                                        c.id === currentConvId
+                                            ? {
+                                                ...c,
+                                                messages: c.messages.map(m =>
+                                                    m.id === assistantMessageId
+                                                        ? { ...m, content: fullContent }
+                                                        : m
+                                                ),
+                                                updatedAt: new Date()
+                                            }
+                                            : c
+                                    ))
+                                }
+                            } catch {
+                                // Skip invalid JSON
+                            }
+                        }
+                    }
+                }
             }
 
-            updateCurrentConvMessages([...newMessages, assistantMessage])
             playNotificationSound()
         } catch (error) {
             console.error('Error:', error)
-            const errorMessage: Message = {
-                id: (Date.now() + 1).toString(),
-                role: 'assistant',
-                content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.',
-                timestamp: new Date()
-            }
-            updateCurrentConvMessages([...newMessages, errorMessage])
+            // Update with error message
+            setConversations(prev => prev.map(c =>
+                c.id === currentConvId
+                    ? {
+                        ...c,
+                        messages: c.messages.map(m =>
+                            m.id === assistantMessageId
+                                ? { ...m, content: 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại sau.' }
+                                : m
+                        )
+                    }
+                    : c
+            ))
         } finally {
             setIsLoading(false)
+            setStreamingMessageId(null)
         }
     }
 
@@ -433,6 +497,36 @@ function ChatPageContent() {
 
     const toggleTheme = () => setIsDarkMode(prev => !prev)
 
+    // Text-to-Speech functions
+    const speakMessage = (messageId: string, content: string) => {
+        if (!ttsSupported) return
+
+        // Stop any current speech
+        window.speechSynthesis.cancel()
+
+        if (speakingId === messageId) {
+            // Toggle off if same message
+            setSpeakingId(null)
+            return
+        }
+
+        const utterance = new SpeechSynthesisUtterance(content)
+        utterance.lang = 'vi-VN'
+        utterance.rate = 1.0
+        utterance.pitch = 1.0
+
+        utterance.onstart = () => setSpeakingId(messageId)
+        utterance.onend = () => setSpeakingId(null)
+        utterance.onerror = () => setSpeakingId(null)
+
+        window.speechSynthesis.speak(utterance)
+    }
+
+    const stopSpeaking = () => {
+        window.speechSynthesis.cancel()
+        setSpeakingId(null)
+    }
+
     const suggestedQuestions = [
         'Làm sao để phá vỡ trần tăng trưởng?',
         'Tôi muốn hiểu về Virtual Me và Real Me',
@@ -515,7 +609,7 @@ function ChatPageContent() {
                                             <span className="text-green-400">Online</span>
                                         </div>
                                         <span className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
-                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v4.1</span>
+                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v4.2</span>
                                     </div>
                                 </div>
                             </Link>
@@ -597,17 +691,41 @@ function ChatPageContent() {
                                         )}
                                         <div className="relative max-w-[80%]">
                                             <div className={`rounded-2xl px-4 py-3 ${message.role === 'user' ? 'bg-gradient-to-r from-cyan-500 to-purple-500 text-white' : isDarkMode ? 'glass text-gray-100' : 'bg-white shadow-md text-gray-800'}`}>
-                                                <div className="whitespace-pre-wrap text-sm md:text-base leading-relaxed">
-                                                    {message.content.split('\n').map((line, i) => {
-                                                        const parts = line.split(/\*\*(.*?)\*\*/g)
-                                                        return <p key={i} className={i > 0 ? 'mt-2' : ''}>{parts.map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}</p>
-                                                    })}
+                                                <div className="text-sm md:text-base leading-relaxed">
+                                                    {message.role === 'user' ? (
+                                                        <p className="whitespace-pre-wrap">{message.content}</p>
+                                                    ) : (
+                                                        <>
+                                                            <MarkdownRenderer content={message.content} isDarkMode={isDarkMode} />
+                                                            {streamingMessageId === message.id && (
+                                                                <span className="inline-block w-2 h-4 bg-current animate-pulse ml-1"></span>
+                                                            )}
+                                                        </>
+                                                    )}
                                                 </div>
                                                 <div className="flex items-center justify-between mt-2">
                                                     <p className={`text-xs ${message.role === 'user' ? 'text-white/70' : isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                         {message.timestamp.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                     </p>
                                                     <div className="flex items-center gap-1">
+                                                        {/* TTS and Rating buttons for assistant messages */}
+                                                        {message.role === 'assistant' && ttsSupported && message.content && (
+                                                            <button
+                                                                onClick={() => speakMessage(message.id, message.content)}
+                                                                className={`p-1 rounded transition-colors ${speakingId === message.id ? 'text-cyan-400 animate-pulse' : isDarkMode ? 'text-gray-500 hover:text-cyan-400' : 'text-gray-400 hover:text-cyan-500'}`}
+                                                                title={speakingId === message.id ? 'Dừng đọc' : 'Đọc tin nhắn'}
+                                                            >
+                                                                {speakingId === message.id ? (
+                                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                                        <path d="M6 6h12v12H6z" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        )}
                                                         {/* Rating buttons for assistant messages */}
                                                         {message.role === 'assistant' && (
                                                             <>
