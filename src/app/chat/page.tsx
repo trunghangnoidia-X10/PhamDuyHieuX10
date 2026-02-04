@@ -525,12 +525,18 @@ function ChatPageContent() {
 
     const toggleTheme = () => setIsDarkMode(prev => !prev)
 
-    // Text-to-Speech functions
+    // Text-to-Speech functions using ResponsiveVoice
     const speakMessage = (messageId: string, content: string) => {
-        if (!ttsSupported) return
+        // Check if ResponsiveVoice is loaded
+        const rv = (window as unknown as { responsiveVoice?: { speak: (text: string, voice: string, options?: object) => void; cancel: () => void; isPlaying: () => boolean } }).responsiveVoice
+
+        if (!rv) {
+            console.error('ResponsiveVoice not loaded')
+            return
+        }
 
         // Stop any current speech
-        window.speechSynthesis.cancel()
+        rv.cancel()
 
         if (speakingId === messageId) {
             // Toggle off if same message
@@ -538,32 +544,30 @@ function ChatPageContent() {
             return
         }
 
-        const utterance = new SpeechSynthesisUtterance(content)
-
-        // Use preloaded Vietnamese voice if available
-        if (vietnameseVoice) {
-            utterance.voice = vietnameseVoice
-            console.log('Using Vietnamese voice:', vietnameseVoice.name)
-        } else {
-            console.log('No Vietnamese voice available, using default with vi-VN lang')
-        }
-
-        utterance.lang = 'vi-VN'
-        utterance.rate = 0.9  // Slightly slower for clearer Vietnamese pronunciation
-        utterance.pitch = 1.0
-
-        utterance.onstart = () => setSpeakingId(messageId)
-        utterance.onend = () => setSpeakingId(null)
-        utterance.onerror = (e) => {
-            console.error('TTS Error:', e)
-            setSpeakingId(null)
-        }
-
-        window.speechSynthesis.speak(utterance)
+        // Use Vietnamese Female voice from ResponsiveVoice
+        rv.speak(content, 'Vietnamese Female', {
+            rate: 0.9,
+            pitch: 1,
+            onstart: () => {
+                console.log('TTS Started with ResponsiveVoice Vietnamese')
+                setSpeakingId(messageId)
+            },
+            onend: () => {
+                console.log('TTS Ended')
+                setSpeakingId(null)
+            },
+            onerror: (e: unknown) => {
+                console.error('TTS Error:', e)
+                setSpeakingId(null)
+            }
+        })
     }
 
     const stopSpeaking = () => {
-        window.speechSynthesis.cancel()
+        const rv = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
+        if (rv) {
+            rv.cancel()
+        }
         setSpeakingId(null)
     }
 

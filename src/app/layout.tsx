@@ -45,6 +45,12 @@ export default function RootLayout({
                         gtag('config', '${GA_MEASUREMENT_ID}');
                     `}
                 </Script>
+
+                {/* ResponsiveVoice.js for Vietnamese TTS */}
+                <Script
+                    src="https://code.responsivevoice.org/responsivevoice.js?key=FREE"
+                    strategy="afterInteractive"
+                />
             </head>
             <body className="antialiased">
                 <AuthProvider>
