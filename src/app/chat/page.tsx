@@ -511,6 +511,19 @@ function ChatPageContent() {
         }
 
         const utterance = new SpeechSynthesisUtterance(content)
+
+        // Get available voices and find Vietnamese voice
+        const voices = window.speechSynthesis.getVoices()
+        const vietnameseVoice = voices.find(voice =>
+            voice.lang.startsWith('vi') ||
+            voice.name.toLowerCase().includes('vietnam') ||
+            voice.name.toLowerCase().includes('vietnamese')
+        )
+
+        if (vietnameseVoice) {
+            utterance.voice = vietnameseVoice
+        }
+
         utterance.lang = 'vi-VN'
         utterance.rate = 1.0
         utterance.pitch = 1.0
@@ -519,7 +532,22 @@ function ChatPageContent() {
         utterance.onend = () => setSpeakingId(null)
         utterance.onerror = () => setSpeakingId(null)
 
-        window.speechSynthesis.speak(utterance)
+        // If voices not loaded yet, wait for them
+        if (voices.length === 0) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                const loadedVoices = window.speechSynthesis.getVoices()
+                const viVoice = loadedVoices.find(v =>
+                    v.lang.startsWith('vi') ||
+                    v.name.toLowerCase().includes('vietnam')
+                )
+                if (viVoice) {
+                    utterance.voice = viVoice
+                }
+                window.speechSynthesis.speak(utterance)
+            }
+        } else {
+            window.speechSynthesis.speak(utterance)
+        }
     }
 
     const stopSpeaking = () => {
