@@ -525,31 +525,91 @@ function ChatPageContent() {
 
     const toggleTheme = () => setIsDarkMode(prev => !prev)
 
-    // Text-to-Speech functions using ResponsiveVoice
+    // Text-to-Speech functions - Using native SpeechSynthesis API with ResponsiveVoice fallback
     const speakMessage = (messageId: string, content: string) => {
-        // Check if ResponsiveVoice is loaded
-        const rv = (window as unknown as { responsiveVoice?: { speak: (text: string, voice: string, options?: object) => void; cancel: () => void; isPlaying: () => boolean } }).responsiveVoice
-
-        if (!rv) {
-            console.error('ResponsiveVoice not loaded')
-            return
-        }
-
-        // Stop any current speech
-        rv.cancel()
-
+        // Toggle off if same message is speaking
         if (speakingId === messageId) {
-            // Toggle off if same message
+            window.speechSynthesis?.cancel()
+            const rv = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
+            if (rv) rv.cancel()
             setSpeakingId(null)
             return
         }
 
-        // Use Vietnamese Female voice from ResponsiveVoice
-        rv.speak(content, 'Vietnamese Female', {
+        // Stop any current speech first
+        window.speechSynthesis?.cancel()
+        const rvCheck = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
+        if (rvCheck) rvCheck.cancel()
+
+        // Clean text for TTS (remove markdown formatting)
+        const cleanText = content
+            .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold
+            .replace(/\*(.*?)\*/g, '$1')      // Remove italic
+            .replace(/`(.*?)`/g, '$1')        // Remove code
+            .replace(/#+\s/g, '')             // Remove headers
+            .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+            .replace(/\n+/g, '. ')            // Replace newlines with pause
+            .trim()
+
+        // Try native SpeechSynthesis first (more reliable on Chrome/Windows)
+        if ('speechSynthesis' in window) {
+            const utterance = new SpeechSynthesisUtterance(cleanText)
+
+            // Find Vietnamese voice
+            const voices = window.speechSynthesis.getVoices()
+            const viVoice = voices.find(v => v.lang === 'vi-VN') ||
+                voices.find(v => v.lang.startsWith('vi')) ||
+                vietnameseVoice
+
+            if (viVoice) {
+                utterance.voice = viVoice
+                console.log('Using Vietnamese voice:', viVoice.name)
+            } else {
+                console.log('No Vietnamese voice found, using default')
+            }
+
+            utterance.lang = 'vi-VN'
+            utterance.rate = 0.9
+            utterance.pitch = 1
+
+            utterance.onstart = () => {
+                console.log('TTS Started with native SpeechSynthesis')
+                setSpeakingId(messageId)
+            }
+
+            utterance.onend = () => {
+                console.log('TTS Ended')
+                setSpeakingId(null)
+            }
+
+            utterance.onerror = (e) => {
+                console.error('Native TTS Error:', e)
+                // Fallback to ResponsiveVoice
+                tryResponsiveVoice(messageId, cleanText)
+            }
+
+            window.speechSynthesis.speak(utterance)
+            return
+        }
+
+        // Fallback to ResponsiveVoice if native not available
+        tryResponsiveVoice(messageId, cleanText)
+    }
+
+    // ResponsiveVoice fallback function
+    const tryResponsiveVoice = (messageId: string, text: string) => {
+        const rv = (window as unknown as { responsiveVoice?: { speak: (text: string, voice: string, options?: object) => void; cancel: () => void; isPlaying: () => boolean } }).responsiveVoice
+
+        if (!rv) {
+            console.error('No TTS available (neither native nor ResponsiveVoice)')
+            return
+        }
+
+        rv.speak(text, 'Vietnamese Female', {
             rate: 0.9,
             pitch: 1,
             onstart: () => {
-                console.log('TTS Started with ResponsiveVoice Vietnamese')
+                console.log('TTS Started with ResponsiveVoice')
                 setSpeakingId(messageId)
             },
             onend: () => {
@@ -557,17 +617,16 @@ function ChatPageContent() {
                 setSpeakingId(null)
             },
             onerror: (e: unknown) => {
-                console.error('TTS Error:', e)
+                console.error('ResponsiveVoice Error:', e)
                 setSpeakingId(null)
             }
         })
     }
 
     const stopSpeaking = () => {
+        window.speechSynthesis?.cancel()
         const rv = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
-        if (rv) {
-            rv.cancel()
-        }
+        if (rv) rv.cancel()
         setSpeakingId(null)
     }
 
@@ -653,7 +712,7 @@ function ChatPageContent() {
                                             <span className="text-green-400">Online</span>
                                         </div>
                                         <span className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
-                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v4.2</span>
+                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v4.3</span>
                                     </div>
                                 </div>
                             </Link>
