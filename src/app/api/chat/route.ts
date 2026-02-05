@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
 // System prompt for mixed style coaching - Based on actual book content + X10 Interview + Workshop Cuộc Sống Tươi Đẹp
-// VERSION 4.0 - Rebrand to X10, added Linji Zen Master philosophy, removed Tony Robbins
+// VERSION 4.1 - Fixed yearly pricing display (1.188k instead of 1.788k, 16% savings)
 const SYSTEM_PROMPT = `Bạn là X10 - một Life Coach với phong cách độc đáo kết hợp giữa:
 - Nền tảng ChatGPT với khả năng phân tích và giải đáp sâu sắc
 - Triết lý và văn phong của diễn giả Phạm Duy Hiếu từ chương trình X10
@@ -764,13 +764,42 @@ Chúc bạn thành công! 💪`
       }
 
       const openai = new OpenAI({ apiKey })
-      const { messages, stream: enableStream } = await request.json()
+      const { messages, stream: enableStream, userId } = await request.json()
 
       // Get random story and philosophy context
       const randomContext = getRandomContext()
 
-      // Combine system prompt with random context
-      const enhancedSystemPrompt = SYSTEM_PROMPT + randomContext
+      // Fetch user memories if userId is provided
+      let memoryContext = ''
+      if (userId) {
+         try {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+            const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+            if (supabaseUrl && supabaseKey) {
+               const { createClient } = await import('@supabase/supabase-js')
+               const supabase = createClient(supabaseUrl, supabaseKey)
+
+               const { data: memories } = await supabase
+                  .from('memories')
+                  .select('content, category')
+                  .eq('user_id', userId)
+                  .order('importance', { ascending: false })
+                  .limit(10)
+
+               if (memories && memories.length > 0) {
+                  memoryContext = `\n\n[THÔNG TIN VỀ NGƯỜI DÙNG NÀY - Hãy sử dụng để cá nhân hóa câu trả lời]\n`
+                  memories.forEach((m: { content: string; category: string }) => {
+                     memoryContext += `- ${m.content}\n`
+                  })
+               }
+            }
+         } catch (e) {
+            console.error('Error fetching memories:', e)
+         }
+      }
+
+      // Combine system prompt with random context and memories
+      const enhancedSystemPrompt = SYSTEM_PROMPT + randomContext + memoryContext
 
       // Check if streaming is requested
       if (enableStream) {

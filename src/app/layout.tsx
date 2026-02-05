@@ -46,11 +46,23 @@ export default function RootLayout({
                     `}
                 </Script>
 
-                {/* ResponsiveVoice.js for Vietnamese TTS */}
-                <Script
-                    src="https://code.responsivevoice.org/responsivevoice.js?key=FREE"
-                    strategy="afterInteractive"
-                />
+                {/* Service Worker Registration */}
+                <Script id="sw-register" strategy="afterInteractive">
+                    {`
+                        if ('serviceWorker' in navigator) {
+                            window.addEventListener('load', function() {
+                                navigator.serviceWorker.register('/sw.js')
+                                    .then(function(registration) {
+                                        console.log('SW registered: ', registration);
+                                    })
+                                    .catch(function(error) {
+                                        console.log('SW registration failed: ', error);
+                                    });
+                            });
+                        }
+                    `}
+                </Script>
+
             </head>
             <body className="antialiased">
                 <AuthProvider>

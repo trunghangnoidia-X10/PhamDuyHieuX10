@@ -104,11 +104,6 @@ function ChatPageContent() {
     const [speechSupported, setSpeechSupported] = useState(false)
     const recognitionRef = useRef<SpeechRecognition | null>(null)
 
-    // Text-to-Speech state
-    const [speakingId, setSpeakingId] = useState<string | null>(null)
-    const [ttsSupported, setTtsSupported] = useState(false)
-    const [vietnameseVoice, setVietnameseVoice] = useState<SpeechSynthesisVoice | null>(null)
-
     // Welcome back state
     const [showWelcomeBack, setShowWelcomeBack] = useState(false)
     const [daysAway, setDaysAway] = useState(0)
@@ -127,35 +122,6 @@ function ChatPageContent() {
         // Check speech recognition support
         if (typeof window !== 'undefined') {
             setSpeechSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-            // Check TTS support and preload voices
-            if ('speechSynthesis' in window) {
-                setTtsSupported(true)
-
-                // Function to find and set Vietnamese voice
-                const findVietnameseVoice = () => {
-                    const voices = window.speechSynthesis.getVoices()
-                    console.log('Available TTS voices:', voices.map(v => `${v.name} (${v.lang})`).join(', '))
-
-                    // Priority: exact vi-VN match, then vi prefix, then name contains Vietnamese
-                    let viVoice = voices.find(v => v.lang === 'vi-VN')
-                    if (!viVoice) viVoice = voices.find(v => v.lang.startsWith('vi'))
-                    if (!viVoice) viVoice = voices.find(v => v.name.toLowerCase().includes('vietnam'))
-
-                    if (viVoice) {
-                        console.log('Selected Vietnamese voice:', viVoice.name, viVoice.lang)
-                        setVietnameseVoice(viVoice)
-                    } else {
-                        console.log('No Vietnamese voice found. Using default.')
-                    }
-                }
-
-                // Voices may not be loaded immediately
-                if (window.speechSynthesis.getVoices().length > 0) {
-                    findVietnameseVoice()
-                } else {
-                    window.speechSynthesis.onvoiceschanged = findVietnameseVoice
-                }
-            }
         }
 
         // Load theme
@@ -353,7 +319,8 @@ function ChatPageContent() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     messages: newMessages.map(m => ({ role: m.role, content: m.content })),
-                    stream: true
+                    stream: true,
+                    userId: user?.id
                 }),
             })
 
@@ -504,6 +471,19 @@ function ChatPageContent() {
         return currentMsg.timestamp.toDateString() !== prevMsg.timestamp.toDateString()
     }
 
+    // Format relative time (e.g., "5 phút trước")
+    const formatRelativeTime = (date: Date): string => {
+        const now = new Date()
+        const diffMs = now.getTime() - date.getTime()
+        const diffMins = Math.floor(diffMs / 60000)
+        const diffHours = Math.floor(diffMs / 3600000)
+
+        if (diffMins < 1) return 'Vừa xong'
+        if (diffMins < 60) return `${diffMins} phút trước`
+        if (diffHours < 24) return `${diffHours} giờ trước`
+        return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    }
+
     // Export chat
     const exportToTxt = () => {
         const content = messages.map(m => {
@@ -525,110 +505,6 @@ function ChatPageContent() {
 
     const toggleTheme = () => setIsDarkMode(prev => !prev)
 
-    // Text-to-Speech functions - Using native SpeechSynthesis API with ResponsiveVoice fallback
-    const speakMessage = (messageId: string, content: string) => {
-        // Toggle off if same message is speaking
-        if (speakingId === messageId) {
-            window.speechSynthesis?.cancel()
-            const rv = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
-            if (rv) rv.cancel()
-            setSpeakingId(null)
-            return
-        }
-
-        // Stop any current speech first
-        window.speechSynthesis?.cancel()
-        const rvCheck = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
-        if (rvCheck) rvCheck.cancel()
-
-        // Clean text for TTS (remove markdown formatting)
-        const cleanText = content
-            .replace(/\*\*(.*?)\*\*/g, '$1')  // Remove bold
-            .replace(/\*(.*?)\*/g, '$1')      // Remove italic
-            .replace(/`(.*?)`/g, '$1')        // Remove code
-            .replace(/#+\s/g, '')             // Remove headers
-            .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
-            .replace(/\n+/g, '. ')            // Replace newlines with pause
-            .trim()
-
-        // Try native SpeechSynthesis first (more reliable on Chrome/Windows)
-        if ('speechSynthesis' in window) {
-            const utterance = new SpeechSynthesisUtterance(cleanText)
-
-            // Find Vietnamese voice
-            const voices = window.speechSynthesis.getVoices()
-            const viVoice = voices.find(v => v.lang === 'vi-VN') ||
-                voices.find(v => v.lang.startsWith('vi')) ||
-                vietnameseVoice
-
-            if (viVoice) {
-                utterance.voice = viVoice
-                console.log('Using Vietnamese voice:', viVoice.name)
-            } else {
-                console.log('No Vietnamese voice found, using default')
-            }
-
-            utterance.lang = 'vi-VN'
-            utterance.rate = 0.9
-            utterance.pitch = 1
-
-            utterance.onstart = () => {
-                console.log('TTS Started with native SpeechSynthesis')
-                setSpeakingId(messageId)
-            }
-
-            utterance.onend = () => {
-                console.log('TTS Ended')
-                setSpeakingId(null)
-            }
-
-            utterance.onerror = (e) => {
-                console.error('Native TTS Error:', e)
-                // Fallback to ResponsiveVoice
-                tryResponsiveVoice(messageId, cleanText)
-            }
-
-            window.speechSynthesis.speak(utterance)
-            return
-        }
-
-        // Fallback to ResponsiveVoice if native not available
-        tryResponsiveVoice(messageId, cleanText)
-    }
-
-    // ResponsiveVoice fallback function
-    const tryResponsiveVoice = (messageId: string, text: string) => {
-        const rv = (window as unknown as { responsiveVoice?: { speak: (text: string, voice: string, options?: object) => void; cancel: () => void; isPlaying: () => boolean } }).responsiveVoice
-
-        if (!rv) {
-            console.error('No TTS available (neither native nor ResponsiveVoice)')
-            return
-        }
-
-        rv.speak(text, 'Vietnamese Female', {
-            rate: 0.9,
-            pitch: 1,
-            onstart: () => {
-                console.log('TTS Started with ResponsiveVoice')
-                setSpeakingId(messageId)
-            },
-            onend: () => {
-                console.log('TTS Ended')
-                setSpeakingId(null)
-            },
-            onerror: (e: unknown) => {
-                console.error('ResponsiveVoice Error:', e)
-                setSpeakingId(null)
-            }
-        })
-    }
-
-    const stopSpeaking = () => {
-        window.speechSynthesis?.cancel()
-        const rv = (window as unknown as { responsiveVoice?: { cancel: () => void } }).responsiveVoice
-        if (rv) rv.cancel()
-        setSpeakingId(null)
-    }
 
     const suggestedQuestions = [
         'Làm sao để phá vỡ trần tăng trưởng?',
@@ -712,13 +588,18 @@ function ChatPageContent() {
                                             <span className="text-green-400">Online</span>
                                         </div>
                                         <span className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
-                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v4.3</span>
+                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v5.0</span>
                                     </div>
                                 </div>
                             </Link>
                         </div>
 
                         <div className="flex items-center space-x-1">
+                            <Link href="/profile" className={`p-2 rounded-full transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5'}`} title="Tài khoản">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                            </Link>
                             <button onClick={exportToTxt} className={`p-2 rounded-full transition-colors ${isDarkMode ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5'}`} title="Xuất chat">
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -807,28 +688,10 @@ function ChatPageContent() {
                                                     )}
                                                 </div>
                                                 <div className="flex items-center justify-between mt-2">
-                                                    <p className={`text-xs ${message.role === 'user' ? 'text-white/70' : isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                                        {message.timestamp.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                    <p className={`text-xs ${message.role === 'user' ? 'text-white/70' : isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} title={message.timestamp.toLocaleString('vi-VN')}>
+                                                        {formatRelativeTime(message.timestamp)}
                                                     </p>
                                                     <div className="flex items-center gap-1">
-                                                        {/* TTS and Rating buttons for assistant messages */}
-                                                        {message.role === 'assistant' && ttsSupported && message.content && (
-                                                            <button
-                                                                onClick={() => speakMessage(message.id, message.content)}
-                                                                className={`p-1 rounded transition-colors ${speakingId === message.id ? 'text-cyan-400 animate-pulse' : isDarkMode ? 'text-gray-500 hover:text-cyan-400' : 'text-gray-400 hover:text-cyan-500'}`}
-                                                                title={speakingId === message.id ? 'Dừng đọc' : 'Đọc tin nhắn'}
-                                                            >
-                                                                {speakingId === message.id ? (
-                                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                                        <path d="M6 6h12v12H6z" />
-                                                                    </svg>
-                                                                ) : (
-                                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                                                                    </svg>
-                                                                )}
-                                                            </button>
-                                                        )}
                                                         {/* Rating buttons for assistant messages */}
                                                         {message.role === 'assistant' && (
                                                             <>
