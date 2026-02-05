@@ -2,9 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import AuthGuard from '@/components/AuthGuard'
 import { useAuth } from '@/lib/auth'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
+import SessionKickedModal from '@/components/SessionKickedModal'
+import DevicePolicyBanner from '@/components/DevicePolicyBanner'
 
 interface Message {
     id: string
@@ -83,7 +86,8 @@ declare global {
 }
 
 function ChatPageContent() {
-    const { user, signOut, authRequired } = useAuth()
+    const { user, signOut, authRequired, sessionKicked, clearSessionKicked } = useAuth()
+    const router = useRouter()
     // Conversations state
     const [conversations, setConversations] = useState<Conversation[]>([])
     const [currentConvId, setCurrentConvId] = useState<string | null>(null)
@@ -513,8 +517,21 @@ function ChatPageContent() {
         'Làm sao để sống thật với chính mình?'
     ]
 
+    // Handle session kicked - redirect to login
+    const handleSessionKickedLogin = useCallback(() => {
+        clearSessionKicked()
+        signOut()
+        router.push('/login')
+    }, [clearSessionKicked, signOut, router])
+
     return (
         <div className={`min-h-screen flex transition-all duration-300 ${isDarkMode ? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900' : 'bg-gradient-to-br from-slate-100 via-purple-100 to-pink-100'}`}>
+            {/* Session Kicked Modal */}
+            <SessionKickedModal isOpen={sessionKicked} onLogin={handleSessionKickedLogin} />
+
+            {/* Device Policy Banner */}
+            <DevicePolicyBanner isDarkMode={isDarkMode} />
+
             {/* Sidebar */}
             <div className={`fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full'} ${isDarkMode ? 'bg-slate-900/95' : 'bg-white/95'} backdrop-blur-lg border-r ${isDarkMode ? 'border-white/10' : 'border-gray-200'}`}>
                 <div className="flex flex-col h-full">

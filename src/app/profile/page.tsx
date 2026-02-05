@@ -207,23 +207,13 @@ function ProfilePageContent() {
                                             </p>
                                         </div>
                                     </div>
-                                    {index !== 0 && (
-                                        <button
-                                            onClick={() => removeDevice(device.id)}
-                                            className="p-2 text-red-400 hover:text-red-300 transition"
-                                            title="Xóa thiết bị"
-                                        >
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
-                                    )}
+                                    {/* Single device policy - no delete button needed */}
                                 </div>
                             ))}
                         </div>
                     )}
                     <p className={`text-xs mt-3 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                        Tối đa 2 thiết bị được phép đăng nhập cùng lúc
+                        Chỉ 1 thiết bị được phép đăng nhập. Đăng nhập thiết bị mới sẽ tự động đăng xuất thiết bị cũ.
                     </p>
                 </div>
 
