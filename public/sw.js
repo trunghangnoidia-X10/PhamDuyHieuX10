@@ -1,5 +1,5 @@
-// X10 Service Worker v1.0
-const CACHE_NAME = 'x10-cache-v1';
+// X10 Service Worker v5.2
+const CACHE_NAME = 'x10-cache-v5.2';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache immediately on install

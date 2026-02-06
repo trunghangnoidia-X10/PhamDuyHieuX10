@@ -236,6 +236,22 @@ function ProfilePageContent() {
                                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
                             </button>
                         </div>
+
+                        {/* Admin Link - only for admin email */}
+                        {user?.email === 'ttrungphamkpl@gmail.com' && (
+                            <Link
+                                href="/admin"
+                                className={`flex items-center justify-between py-3 px-4 rounded-xl transition ${isDarkMode ? 'bg-purple-500/20 hover:bg-purple-500/30' : 'bg-purple-50 hover:bg-purple-100'}`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xl">🔐</span>
+                                    <span className={isDarkMode ? 'text-purple-300' : 'text-purple-700'}>Trang quản trị</span>
+                                </div>
+                                <svg className={`w-5 h-5 ${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </Link>
+                        )}
                     </div>
                 </div>
 

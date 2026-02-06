@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
@@ -8,6 +8,8 @@ import { useAuth } from '@/lib/auth'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 import SessionKickedModal from '@/components/SessionKickedModal'
 import DevicePolicyBanner from '@/components/DevicePolicyBanner'
+import BookmarkButton from '@/components/BookmarkButton'
+import SkeletonLoader from '@/components/SkeletonLoader'
 
 interface Message {
     id: string
@@ -114,6 +116,9 @@ function ChatPageContent() {
 
     // Streaming state
     const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
+
+    // Search state
+    const [searchQuery, setSearchQuery] = useState('')
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -517,6 +522,12 @@ function ChatPageContent() {
         'Làm sao để sống thật với chính mình?'
     ]
 
+    // Filter conversations
+    const filteredConversations = conversations.filter(conv =>
+        conv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        conv.messages.some(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
+
     // Handle session kicked - redirect to login
     const handleSessionKickedLogin = useCallback(() => {
         clearSessionKicked()
@@ -535,7 +546,26 @@ function ChatPageContent() {
             {/* Sidebar */}
             <div className={`fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 ${showSidebar ? 'translate-x-0' : '-translate-x-full'} ${isDarkMode ? 'bg-slate-900/95' : 'bg-white/95'} backdrop-blur-lg border-r ${isDarkMode ? 'border-white/10' : 'border-gray-200'}`}>
                 <div className="flex flex-col h-full">
-                    <div className="p-4 border-b border-white/10">
+                    <div className="p-4 border-b border-white/10 space-y-3">
+                        <div className={`relative px-3 py-2 rounded-lg flex items-center gap-2 ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+                            <svg className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Tìm kiếm..."
+                                className={`flex-1 bg-transparent border-none outline-none text-sm ${isDarkMode ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-500'}`}
+                            />
+                            {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="p-1 hover:bg-white/10 rounded-full">
+                                    <svg className="w-3 h-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
                         <button
                             onClick={createConversation}
                             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-medium flex items-center justify-center gap-2 hover:opacity-90 transition"
@@ -548,7 +578,12 @@ function ChatPageContent() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-2">
-                        {conversations.map(conv => (
+                        {filteredConversations.length === 0 && searchQuery && (
+                            <div className="text-center text-gray-500 text-sm mt-4">
+                                Không tìm thấy kết quả
+                            </div>
+                        )}
+                        {filteredConversations.map(conv => (
                             <div
                                 key={conv.id}
                                 className={`group flex items-center gap-2 p-3 rounded-lg cursor-pointer mb-1 ${conv.id === currentConvId ? (isDarkMode ? 'bg-white/10' : 'bg-purple-100') : 'hover:bg-white/5'}`}
@@ -672,7 +707,29 @@ function ChatPageContent() {
                     <div className="max-w-4xl mx-auto px-4">
                         {messages.map((message, index) => {
                             const prevMessage = index > 0 ? messages[index - 1] : null
+
+
+
+
                             const showDateSeparator = shouldShowDateSeparator(message, prevMessage)
+
+                            let suggestions: string[] = []
+                            let cleanContent = message.content
+                            if (message.role === "assistant" && message.content.includes("[SUGGESTED_QUESTIONS]")) {
+                                const parts = message.content.split("[SUGGESTED_QUESTIONS]")
+                                cleanContent = parts[0]
+                                try {
+                                    // Try strict JSON parse first
+                                    let jsonStr = parts[1].trim()
+                                    // Remove markdown code blocks if present
+                                    jsonStr = jsonStr.replace(/```json/g, "").replace(/```/g, "").trim()
+                                    suggestions = JSON.parse(jsonStr)
+                                } catch (e) {
+                                    console.log("Failed to parse suggestions:", e)
+                                }
+                            }
+
+
 
                             return (
                                 <div key={message.id}>
@@ -697,7 +754,30 @@ function ChatPageContent() {
                                                         <p className="whitespace-pre-wrap">{message.content}</p>
                                                     ) : (
                                                         <>
-                                                            <MarkdownRenderer content={message.content} isDarkMode={isDarkMode} />
+
+                                                            <MarkdownRenderer content={cleanContent} isDarkMode={isDarkMode} />
+                                                            {suggestions.length > 0 && (
+                                                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                                                    <p className="text-xs font-medium opacity-70 mb-2">Gợi ý câu hỏi tiếp theo:</p>
+                                                                    <div className="flex flex-col gap-2">
+                                                                        {suggestions.map((s, i) => (
+                                                                            <button
+                                                                                key={i}
+                                                                                onClick={() => {
+                                                                                    setInput(s)
+                                                                                    inputRef.current?.focus()
+                                                                                }}
+                                                                                className={`text-sm text-left px-3 py-2 rounded-lg transition-colors ${isDarkMode
+                                                                                    ? "bg-white/5 hover:bg-white/10 text-cyan-300"
+                                                                                    : "bg-gray-100 hover:bg-gray-200 text-cyan-700"
+                                                                                    }`}
+                                                                            >
+                                                                                {s}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                             {streamingMessageId === message.id && (
                                                                 <span className="inline-block w-2 h-4 bg-current animate-pulse ml-1"></span>
                                                             )}
@@ -730,6 +810,15 @@ function ChatPageContent() {
                                                                 </button>
                                                             </>
                                                         )}
+
+                                                        {message.role === "assistant" && (
+                                                            <BookmarkButton
+                                                                messageId={message.id}
+                                                                content={message.content}
+                                                                conversationTitle={currentConv?.title || "Cuộc trò chuyện"}
+                                                                isDarkMode={isDarkMode}
+                                                            />
+                                                        )}
                                                         <button onClick={() => copyToClipboard(message.id, message.content)} className={`copy-btn p-1 rounded transition-colors ${copiedId === message.id ? 'text-green-400' : message.role === 'user' ? 'text-white/70 hover:text-white' : isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`}>
                                                             {copiedId === message.id ? (
                                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
@@ -751,17 +840,7 @@ function ChatPageContent() {
                             )
                         })}
 
-                        {isLoading && (
-                            <div className="flex mb-4 justify-start chat-bubble">
-                                <div className="w-8 h-8 rounded-full overflow-hidden mr-3 flex-shrink-0 mt-1 bg-white flex items-center justify-center border border-gray-200">
-                                    <img src="/images/x10-logo.png" alt="X10" className="w-full h-full object-contain p-1" />
-                                </div>
-                                <div className={`rounded-2xl px-4 py-3 ${isDarkMode ? 'glass' : 'bg-white shadow-md'}`}>
-                                    <div className="typing-indicator"><span></span><span></span><span></span></div>
-                                    <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Đang trả lời...</p>
-                                </div>
-                            </div>
-                        )}
+                        {isLoading && <SkeletonLoader isDarkMode={isDarkMode} />}
 
                         {messages.length <= 1 && (
                             <div className="mt-4 mb-8">

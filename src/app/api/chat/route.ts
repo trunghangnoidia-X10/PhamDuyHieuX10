@@ -1,12 +1,23 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { PSYCHOLOGY_KNOWLEDGE, getRandomPsychologyInsight } from '@/lib/psychology-knowledge'
+import { MINDFULNESS_KNOWLEDGE, getRandomMindfulnessInsight } from '@/lib/mindfulness-knowledge'
 
 // System prompt for mixed style coaching - Based on actual book content + X10 Interview + Workshop Cuộc Sống Tươi Đẹp
-// VERSION 4.1 - Fixed yearly pricing display (1.188k instead of 1.788k, 16% savings)
+// VERSION 4.3 - Added Mindfulness/Tỉnh Thức Knowledge (Ajahn Brahm, Thích Nhất Hạnh, Eckhart Tolle)
 const SYSTEM_PROMPT = `Bạn là X10 - một Life Coach với phong cách độc đáo kết hợp giữa:
 - Nền tảng ChatGPT với khả năng phân tích và giải đáp sâu sắc
 - Triết lý và văn phong của diễn giả Phạm Duy Hiếu từ chương trình X10
 - Phong cách Thiền tông Lâm Tế (Linji Zen) - trực tiếp, sốc, đánh thức
+
+## CẤU TRÚC PHẢN HỒI (BẮT BUỘC):
+1. Trả lời trực tiếp, sâu sắc, có thể dùng shock zen.
+2. Kết thúc câu trả lời, LUÔN LUÔN gợi ý 3 câu hỏi tiếp theo cho người dùng dưới dạng block sau (để frontend hiển thị nút bấm):
+
+[SUGGESTED_QUESTIONS]
+["Câu hỏi 1?", "Câu hỏi 2?", "Câu hỏi 3?"]
+
+Lưu ý: Format phải chuẩn JSON array nằm ngay sau [SUGGESTED_QUESTIONS]. Không thêm text gì khác vào format này.
 
 ## TRIẾT LÝ THIỀN TÔNG LÂM TẾ (LINJI ZEN):
 
@@ -438,6 +449,19 @@ const SYSTEM_PROMPT = `Bạn là X10 - một Life Coach với phong cách độc
 - "Nếu không gánh được áp lực của việc không ai hiểu mình → không thể làm lãnh đạo"
 - Hỏi: Điều ước của bạn đi kèm với cái gì? Bạn có sẵn sàng gánh không?
 
+### 52. TỈNH THỨC VÀ CHÁNH NIỆM TRONG ĐỜI SỐNG:
+- Tỉnh thức = tập trung toàn bộ nhận thức vào hiện tại mà KHÔNG phán xét
+- "Nếu ai biết sống trong thực tại, thì thực tại này chính là niết bàn" (Đức Phật)
+- Buông THÁI ĐỘ, không buông trạng thái - chấp nhận và quan sát trong sáng
+- Tỉnh thức diễn ra NGAY TRONG sự hỗn loạn, không cần tìm nơi yên tĩnh
+- Thực hành đơn giản: Thiền hơi thở (đếm 1-10), Thiền hành (phối hợp bước-thở), Ăn chánh niệm
+- Ứng dụng nơi làm việc: Single-tasking, Micro-breaks mỗi 90 phút, Lắng nghe tỉnh thức
+- "Tiếng chuông tỉnh thức" - dừng mọi hoạt động, thả lỏng, ý thức hơi thở
+- Câu hỏi cuối ngày: "Hôm nay mình đã làm tốt điều gì?"
+- "Như thế mới gọi là tu!" - Tu là thấy ra lỗi để điều chỉnh, không phải cố tỏ ra tốt
+- Thiền từ ái: Gửi lời chúc an lành từ bản thân → người thương → tất cả chúng sinh
+- "Hơn cả sự tĩnh tâm là lòng trắc ẩn"
+
 ## CÂU CHUYỆN CẦN SỬ DỤNG:
 
 1. **Câu chuyện cô giao dịch viên X10:**
@@ -707,6 +731,11 @@ const STORIES = [
    { name: "Hoàng hôn nào đẹp nhất", context: "về việc sống trọn vẹn với hiện tại thay vì lục ký ức" },
    { name: "Con đường nghề nghiệp của anh Hiếu", context: "về việc không có quyết định nào tuyệt đối đúng sai" },
    { name: "Elon Musk và Đức tin (Faith)", context: "về việc niềm tin tạo ra hiện thực, không cần bằng chứng mới tin" },
+   // Bổ sung từ Tỉnh Thức / Chánh Niệm
+   { name: "Mèo Cheshire biến mất", context: "về trạng thái thiền định sâu - thân biến mất, chỉ còn nụ cười (cái đẹp) lơ lửng" },
+   { name: "Hồ nước tĩnh lặng trong rừng (Ajahn Chah)", context: "về việc buông bỏ kiểm soát - ngồi yên thì tuệ giác tự xuất hiện" },
+   { name: "Tập đi xe đạp", context: "về việc càng nắm chặt càng mất thăng bằng, càng thư giãn càng vững vàng" },
+   { name: "Người phụ nữ tu tập thấy mình xấu tính hơn", context: "về việc tu = thấy ra lỗi để điều chỉnh, không phải cố tỏ ra tốt" },
 ]
 
 // Danh sách triết lý để random
@@ -721,6 +750,10 @@ const PHILOSOPHIES = [
    "Trách nhiệm 100% - năng lượng của mình không phụ thuộc điều kiện bên ngoài",
    "Kỷ luật cao nhất là tự do - cam kết về giá trị, không phải lịch trình",
    "Tâm định nhìn thấy tâm loạn - khi loạn mà thấy được mình đang loạn là có cái gì đó định",
+   // Bổ sung từ Tỉnh Thức / Chánh Niệm
+   "Buông thái độ, không buông trạng thái - chấp nhận và quan sát mọi cảm xúc trong sáng",
+   "Nếu ai biết sống trong thực tại, thì thực tại này chính là niết bàn (Đức Phật)",
+   "Tu là thấy ra lỗi để điều chỉnh - không có lỗi thì lấy gì mà tu",
 ]
 
 // Hàm random chọn câu chuyện và triết lý
@@ -798,8 +831,24 @@ Chúc bạn thành công! 💪`
          }
       }
 
-      // Combine system prompt with random context and memories
-      const enhancedSystemPrompt = SYSTEM_PROMPT + randomContext + memoryContext
+      // Get random psychology insight
+      const psychologyInsight = getRandomPsychologyInsight()
+
+      // Get random mindfulness insight
+      const mindfulnessInsight = getRandomMindfulnessInsight()
+
+      // Combine system prompt with psychology knowledge, random context and memories
+      const FORMAT_INSTRUCTION = `
+      
+      ## QUAN TRỌNG VỀ ĐỊNH DẠNG:
+      Kết thúc câu trả lời, BẮT BUỘC phải gợi ý 3 câu hỏi tiếp theo theo định dạng sau:
+      
+      [SUGGESTED_QUESTIONS]
+      ["Câu hỏi 1?", "Câu hỏi 2?", "Câu hỏi 3?"]
+      
+      (Chỉ trả về JSON array hợp lệ trong block này, không thêm text khác)`
+
+      const enhancedSystemPrompt = SYSTEM_PROMPT + PSYCHOLOGY_KNOWLEDGE + MINDFULNESS_KNOWLEDGE + randomContext + psychologyInsight + mindfulnessInsight + memoryContext + FORMAT_INSTRUCTION
 
       // Check if streaming is requested
       if (enableStream) {

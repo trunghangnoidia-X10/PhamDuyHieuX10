@@ -2,6 +2,10 @@ import type { Metadata } from 'next'
 import Script from 'next/script'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth'
+import { ToastProvider } from '@/lib/toast'
+import ToastContainer from '@/components/Toast'
+import SplashScreen from '@/components/SplashScreen'
+import NotificationManager from '@/components/NotificationManager'
 
 // Google Analytics Measurement ID
 const GA_MEASUREMENT_ID = 'G-H17FFW9TV0'
@@ -65,9 +69,15 @@ export default function RootLayout({
 
             </head>
             <body className="antialiased">
-                <AuthProvider>
-                    {children}
-                </AuthProvider>
+                <ToastProvider>
+                    <AuthProvider>
+                        <NotificationManager />
+                        <SplashScreen>
+                            {children}
+                        </SplashScreen>
+                    </AuthProvider>
+                    <ToastContainer />
+                </ToastProvider>
             </body>
         </html>
     )
