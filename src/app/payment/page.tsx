@@ -103,6 +103,11 @@ function PaymentPageContent() {
 
             const data = await response.json()
 
+            if (!response.ok) {
+                setError(data.error || `Lỗi server (${response.status}). Vui lòng thử lại.`)
+                return
+            }
+
             if (data.demo) {
                 setError(data.error)
                 return

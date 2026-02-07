@@ -70,7 +70,7 @@ export default function SplashScreen({ children }: SplashScreenProps) {
                     </h1>
 
                     <p className="text-gray-400 text-sm animate-fade-in-up animation-delay-200">
-                        Life Coach AI
+                        Life Coach
                     </p>
 
                     {/* Loading dots */}
