@@ -25,7 +25,7 @@ export interface Device {
     created_at: string
 }
 
-// Helper function to check if auth is required
+// Auth is always required in production
 export const isAuthRequired = () => {
-    return process.env.NEXT_PUBLIC_AUTH_REQUIRED === 'true'
+    return true
 }
