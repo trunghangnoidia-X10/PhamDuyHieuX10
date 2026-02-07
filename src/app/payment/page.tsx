@@ -82,10 +82,16 @@ function PaymentPageContent() {
     }
 
     const handlePayment = async () => {
-        if (!user) return
+        if (!user) {
+            setError('Vui lòng đăng nhập trước khi thanh toán')
+            return
+        }
 
         const plan = PLANS.find(p => p.id === selectedPlan)
-        if (!plan) return
+        if (!plan) {
+            setError('Vui lòng chọn gói thanh toán')
+            return
+        }
 
         setLoading(true)
         setError('')
