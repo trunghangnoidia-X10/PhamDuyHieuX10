@@ -12,17 +12,20 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     const { user, loading, authRequired } = useAuth()
     const router = useRouter()
 
+    // Check if user is a REAL authenticated user (not anonymous)
+    const isRealUser = user && (user.email || user.user_metadata?.email)
+
     useEffect(() => {
         // If auth is not required (dev mode), allow access
         if (!authRequired) {
             return
         }
 
-        // If finished loading and no user, redirect to login
-        if (!loading && !user) {
+        // If finished loading and no real user, redirect to login
+        if (!loading && !isRealUser) {
             router.push('/login')
         }
-    }, [user, loading, authRequired, router])
+    }, [isRealUser, loading, authRequired, router])
 
     // Dev mode - bypass auth
     if (!authRequired) {
@@ -44,11 +47,11 @@ export default function AuthGuard({ children }: AuthGuardProps) {
         )
     }
 
-    // No user - will redirect
-    if (!user) {
+    // No real user - will redirect
+    if (!isRealUser) {
         return null
     }
 
-    // User is authenticated
+    // User is properly authenticated
     return <>{children}</>
 }
