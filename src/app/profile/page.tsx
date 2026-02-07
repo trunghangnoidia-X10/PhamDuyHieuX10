@@ -55,8 +55,12 @@ function ProfilePageContent() {
     }
 
     const handleSignOut = async () => {
-        await signOut()
-        window.location.href = '/'
+        try {
+            await signOut()
+        } catch (error) {
+            console.error('Sign out error:', error)
+        }
+        window.location.href = '/login'
     }
 
     const formatDate = (dateStr: string) => {
