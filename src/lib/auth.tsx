@@ -235,31 +235,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.auth.getSession().then(async ({ data: { session } }) => {
             setSession(session)
             setUser(session?.user ?? null)
+            setLoading(false) // Show page immediately
 
             if (session?.user) {
-                // Check if session is still valid
-                const isValid = await checkSessionValidity(session.user.id)
-                if (!isValid) {
-                    setSessionKicked(true)
-                } else {
-                    await registerDevice(session.user.id)
-                    setupRealtimeSubscription(session.user.id)
-                }
+                // Run device registration and subscription fetch in background (non-blocking)
+                checkSessionValidity(session.user.id).then(isValid => {
+                    if (!isValid) {
+                        setSessionKicked(true)
+                    } else {
+                        registerDevice(session.user.id)
+                        setupRealtimeSubscription(session.user.id)
+                    }
+                })
                 fetchSubscription(session.user.id)
             }
-
-            setLoading(false)
         })
 
         // Listen for auth changes
         const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange(
-            async (event, session) => {
+            (event, session) => {
                 setSession(session)
                 setUser(session?.user ?? null)
+                setLoading(false)
 
                 if (session?.user) {
-                    // Always register device on auth change (could be new login)
-                    await registerDevice(session.user.id)
+                    // Background operations — don't block UI
+                    registerDevice(session.user.id)
                     setupRealtimeSubscription(session.user.id)
                     fetchSubscription(session.user.id)
                 } else {
@@ -271,8 +272,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         setRealtimeChannel(null)
                     }
                 }
-
-                setLoading(false)
             }
         )
 
