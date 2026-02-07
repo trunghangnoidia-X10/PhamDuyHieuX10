@@ -317,7 +317,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clean up local storage
         localStorage.removeItem('x10_session_token')
         localStorage.removeItem('x10_device_fingerprint')
-        await supabase.auth.signOut()
+        // Clear state immediately
+        setUser(null)
+        setSession(null)
+        setSubscription(null)
+        setSessionKicked(false)
+        // Clean up realtime channel
+        if (realtimeChannel) {
+            supabase.removeChannel(realtimeChannel)
+            setRealtimeChannel(null)
+        }
+        // Sign out globally (clears server-side session too)
+        await supabase.auth.signOut({ scope: 'global' })
     }
 
     return (
