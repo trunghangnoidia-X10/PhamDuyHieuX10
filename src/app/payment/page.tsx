@@ -82,9 +82,16 @@ function PaymentPageContent() {
     }
 
     const handlePayment = async () => {
-        if (!user) {
-            setError('Vui lòng đăng nhập trước khi thanh toán')
-            return
+        // Dùng user.id nếu đã đăng nhập, nếu chưa thì tạo anonymous ID
+        let userId = user?.id
+        if (!userId) {
+            // Tạo/lấy anonymous ID từ localStorage
+            let anonId = localStorage.getItem('x10_anon_id')
+            if (!anonId) {
+                anonId = 'anon_' + crypto.randomUUID()
+                localStorage.setItem('x10_anon_id', anonId)
+            }
+            userId = anonId
         }
 
         const plan = PLANS.find(p => p.id === selectedPlan)
@@ -101,7 +108,7 @@ function PaymentPageContent() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    userId: user.id,
+                    userId,
                     amount: plan.price,
                     planType: selectedPlan,
                 })

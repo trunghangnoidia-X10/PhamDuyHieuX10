@@ -46,15 +46,22 @@ export async function POST(request: Request) {
         const userPart = userId.replace(/-/g, '').slice(0, 4).toUpperCase()
         const orderId = `X10${timestamp}${userPart}`
 
-        // Lưu đơn hàng vào DB
-        await getSupabase().from('payments').insert({
-            user_id: userId,
-            order_id: orderId,
-            amount,
-            payment_method: 'bank_transfer',
-            plan_type: planType,
-            status: 'pending'
-        })
+        // Lưu đơn hàng vào DB (chỉ khi user đã đăng nhập với UUID hợp lệ)
+        const isRealUser = !userId.startsWith('anon_')
+        if (isRealUser) {
+            try {
+                await getSupabase().from('payments').insert({
+                    user_id: userId,
+                    order_id: orderId,
+                    amount,
+                    payment_method: 'bank_transfer',
+                    plan_type: planType,
+                    status: 'pending'
+                })
+            } catch (dbError) {
+                console.error('DB insert error (continuing):', dbError)
+            }
+        }
 
         // Tạo VietQR URL (chuẩn QR chuyển khoản liên ngân hàng)
         // Format: https://img.vietqr.io/image/{BANK_BIN}-{ACCOUNT_NUMBER}-compact2.png?amount={AMOUNT}&addInfo={CONTENT}&accountName={NAME}
