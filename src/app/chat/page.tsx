@@ -10,6 +10,8 @@ import SessionKickedModal from '@/components/SessionKickedModal'
 import DevicePolicyBanner from '@/components/DevicePolicyBanner'
 import BookmarkButton from '@/components/BookmarkButton'
 import SkeletonLoader from '@/components/SkeletonLoader'
+import UsageBanner from '@/components/UsageBanner'
+import UpgradeModal from '@/components/UpgradeModal'
 
 interface Message {
     id: string
@@ -87,6 +89,16 @@ declare global {
     }
 }
 
+// Usage state interface
+interface UsageState {
+    canSend: boolean
+    messagesUsed: number
+    messagesLimit: number
+    isTrialPeriod: boolean
+    trialDaysLeft: number
+    isPremium: boolean
+}
+
 function ChatPageContent() {
     const { user, signOut, authRequired, sessionKicked, clearSessionKicked } = useAuth()
     const router = useRouter()
@@ -119,6 +131,17 @@ function ChatPageContent() {
 
     // Search state
     const [searchQuery, setSearchQuery] = useState('')
+
+    // Freemium usage state
+    const [usageState, setUsageState] = useState<UsageState>({
+        canSend: true,
+        messagesUsed: 0,
+        messagesLimit: -1,
+        isTrialPeriod: false,
+        trialDaysLeft: 0,
+        isPremium: true // default to true to avoid flash
+    })
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false)
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -189,6 +212,27 @@ function ChatPageContent() {
             setCurrentConvId(newConv.id)
         }
     }, [])
+
+    // Fetch usage state
+    const fetchUsage = useCallback(async () => {
+        if (!user?.id) return
+        try {
+            const res = await fetch(`/api/usage?userId=${user.id}`)
+            if (res.ok) {
+                const data = await res.json()
+                setUsageState(data)
+            }
+        } catch (e) {
+            console.error('Failed to fetch usage:', e)
+        }
+    }, [user?.id])
+
+    // Fetch usage on mount and when user changes
+    useEffect(() => {
+        if (user?.id && isMounted) {
+            fetchUsage()
+        }
+    }, [user?.id, isMounted, fetchUsage])
 
     // Save conversations to localStorage
     useEffect(() => {
@@ -298,6 +342,12 @@ function ChatPageContent() {
         e.preventDefault()
         if (!input.trim() || isLoading || !currentConvId) return
 
+        // Check rate limit before sending
+        if (!usageState.canSend && !usageState.isPremium) {
+            setShowUpgradeModal(true)
+            return
+        }
+
         const userMessage: Message = {
             id: Date.now().toString(),
             role: 'user',
@@ -333,6 +383,27 @@ function ChatPageContent() {
                 }),
             })
 
+            if (response.status === 429) {
+                // Rate limit hit
+                const errorData = await response.json()
+                setConversations(prev => prev.map(c =>
+                    c.id === currentConvId
+                        ? {
+                            ...c,
+                            messages: c.messages.map(m =>
+                                m.id === assistantMessageId
+                                    ? { ...m, content: errorData.message || 'Đã hết lượt miễn phí hôm nay.' }
+                                    : m
+                            )
+                        }
+                        : c
+                ))
+                setShowUpgradeModal(true)
+                fetchUsage()
+                setIsLoading(false)
+                setStreamingMessageId(null)
+                return
+            }
             if (!response.ok) throw new Error('Failed to get response')
 
             const reader = response.body?.getReader()
@@ -379,6 +450,8 @@ function ChatPageContent() {
             }
 
             playNotificationSound()
+            // Refresh usage after successful message
+            fetchUsage()
         } catch (error) {
             console.error('Error:', error)
             // Update with error message
@@ -394,6 +467,8 @@ function ChatPageContent() {
                     }
                     : c
             ))
+            // Refresh usage in case of rate limit error
+            fetchUsage()
         } finally {
             setIsLoading(false)
             setStreamingMessageId(null)
@@ -540,6 +615,9 @@ function ChatPageContent() {
             {/* Session Kicked Modal */}
             <SessionKickedModal isOpen={sessionKicked} onLogin={handleSessionKickedLogin} />
 
+            {/* Upgrade Modal */}
+            <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} isDarkMode={isDarkMode} />
+
             {/* Device Policy Banner */}
             <DevicePolicyBanner isDarkMode={isDarkMode} />
 
@@ -640,7 +718,7 @@ function ChatPageContent() {
                                             <span className="text-green-400">Online</span>
                                         </div>
                                         <span className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
-                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v5.6</span>
+                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v5.7</span>
                                     </div>
                                 </div>
                             </Link>
@@ -861,6 +939,17 @@ function ChatPageContent() {
 
                 {/* Input Area */}
                 <div className={`fixed bottom-0 left-0 right-0 glass border-t ${isDarkMode ? 'border-white/10' : 'border-gray-200 bg-white/80'}`}>
+                    {/* Usage Banner */}
+                    <UsageBanner
+                        isDarkMode={isDarkMode}
+                        canSend={usageState.canSend}
+                        messagesUsed={usageState.messagesUsed}
+                        messagesLimit={usageState.messagesLimit}
+                        isTrialPeriod={usageState.isTrialPeriod}
+                        trialDaysLeft={usageState.trialDaysLeft}
+                        isPremium={usageState.isPremium}
+                        onUpgradeClick={() => setShowUpgradeModal(true)}
+                    />
                     <div className="max-w-4xl mx-auto px-4 py-3">
                         <form onSubmit={handleSubmit} className="flex items-end space-x-2">
                             {/* Voice Input Button */}
@@ -882,8 +971,9 @@ function ChatPageContent() {
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     onKeyDown={handleKeyDown}
-                                    placeholder={isListening ? 'Đang nghe...' : 'Nhập tin nhắn của bạn...'}
-                                    className={`w-full rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 min-h-[48px] max-h-[200px] transition-colors ${isDarkMode ? 'bg-white/10 text-white placeholder-gray-400' : 'bg-gray-100 text-gray-800 placeholder-gray-500'}`}
+                                    placeholder={!usageState.canSend && !usageState.isPremium ? 'Đã hết lượt miễn phí hôm nay...' : isListening ? 'Đang nghe...' : 'Nhập tin nhắn của bạn...'}
+                                    disabled={!usageState.canSend && !usageState.isPremium}
+                                    className={`w-full rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/50 min-h-[48px] max-h-[200px] transition-colors ${isDarkMode ? 'bg-white/10 text-white placeholder-gray-400' : 'bg-gray-100 text-gray-800 placeholder-gray-500'} ${!usageState.canSend && !usageState.isPremium ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     rows={1}
                                     onInput={(e) => {
                                         const target = e.target as HTMLTextAreaElement

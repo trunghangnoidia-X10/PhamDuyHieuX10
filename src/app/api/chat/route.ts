@@ -937,6 +937,67 @@ Chúc bạn thành công! 💪`
       const openai = new OpenAI({ apiKey })
       const { messages, stream: enableStream, userId } = await request.json()
 
+      // === FREEMIUM RATE LIMITING ===
+      const FREE_MESSAGES_PER_DAY = 3
+      const TRIAL_DAYS = 3
+      let shouldTrackUsage = false
+
+      if (userId) {
+         try {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+            const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+            if (supabaseUrl && supabaseKey) {
+               const { createClient } = await import('@supabase/supabase-js')
+               const rateLimitSupabase = createClient(supabaseUrl, supabaseKey)
+
+               // 1. Check active subscription
+               const { data: subscription } = await rateLimitSupabase
+                  .from('subscriptions')
+                  .select('*')
+                  .eq('user_id', userId)
+                  .eq('status', 'active')
+                  .single()
+
+               const isPremium = subscription && new Date(subscription.expires_at) > new Date()
+
+               if (!isPremium) {
+                  // 2. Check trial period
+                  const { data: userData } = await rateLimitSupabase.auth.admin.getUserById(userId)
+                  const createdAt = userData?.user?.created_at ? new Date(userData.user.created_at) : new Date()
+                  const accountAgeDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24))
+                  const isTrialPeriod = accountAgeDays < TRIAL_DAYS
+
+                  if (!isTrialPeriod) {
+                     // 3. Check daily usage
+                     const today = new Date().toISOString().split('T')[0]
+                     const { data: usage } = await rateLimitSupabase
+                        .from('message_usage')
+                        .select('message_count')
+                        .eq('user_id', userId)
+                        .eq('usage_date', today)
+                        .single()
+
+                     const messagesUsed = usage?.message_count || 0
+
+                     if (messagesUsed >= FREE_MESSAGES_PER_DAY) {
+                        return NextResponse.json({
+                           error: 'rate_limit',
+                           message: 'Bạn đã dùng hết 3 tin nhắn miễn phí hôm nay. Nâng cấp thành viên để trò chuyện không giới hạn! 🔑',
+                           messagesUsed,
+                           messagesLimit: FREE_MESSAGES_PER_DAY
+                        }, { status: 429 })
+                     }
+
+                     shouldTrackUsage = true
+                  }
+               }
+            }
+         } catch (rateLimitError) {
+            console.error('Rate limit check error (allowing request):', rateLimitError)
+         }
+      }
+      // === END RATE LIMITING ===
+
       // Get random story and philosophy context
       const randomContext = getRandomContext()
 
@@ -987,6 +1048,22 @@ Chúc bạn thành công! 💪`
       (Chỉ trả về JSON array hợp lệ trong block này, không thêm text khác)`
 
       const enhancedSystemPrompt = SYSTEM_PROMPT + PSYCHOLOGY_KNOWLEDGE + MINDFULNESS_KNOWLEDGE + randomContext + psychologyInsight + mindfulnessInsight + memoryContext + FORMAT_INSTRUCTION
+
+      // === TRACK USAGE (increment counter for free users) ===
+      if (shouldTrackUsage && userId) {
+         try {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+            const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+            if (supabaseUrl && supabaseKey) {
+               const { createClient } = await import('@supabase/supabase-js')
+               const trackSupabase = createClient(supabaseUrl, supabaseKey)
+               await trackSupabase.rpc('increment_message_usage', { p_user_id: userId })
+            }
+         } catch (trackError) {
+            console.error('Usage tracking error:', trackError)
+         }
+      }
+      // === END TRACK USAGE ===
 
       // Check if streaming is requested
       if (enableStream) {
