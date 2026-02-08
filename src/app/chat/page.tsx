@@ -640,7 +640,7 @@ function ChatPageContent() {
                                             <span className="text-green-400">Online</span>
                                         </div>
                                         <span className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>•</span>
-                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v5.5</span>
+                                        <span className={`${isDarkMode ? 'text-purple-400' : 'text-purple-500'}`}>v5.6</span>
                                     </div>
                                 </div>
                             </Link>
